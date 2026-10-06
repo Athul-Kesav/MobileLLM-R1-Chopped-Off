@@ -1,0 +1,23 @@
+{
+  "python_version": "3.13.0",
+  "torch_version": "2.14.1+cu130",
+  "cuda_build": "13.0",
+  "cuda_available": false,
+  "gpus": [],
+  "cuda_probe_error": "RuntimeError: The NVIDIA driver on your system is too old (found version 12040). Please update your GPU driver by downloading and installing a new version from the URL: http://www.nvidia.com/Download/index.aspx Alternatively, go to: https://pytorch.org to install a PyTorch version that has been compiled with your version of the CUDA driver.",
+  "driver_versions": [
+    "550.163.01",
+    "550.163.01",
+    "550.163.01"
+  ],
+  "transformers_version": "5.18.0",
+  "huggingface_hub_version": "1.33.0",
+  "trl_version": null,
+  "vllm_version": null,
+  "lm_eval_version": null,
+  "disk": {
+    "path": "/home/cs26e003/main/final/MobileLLM-R1-Chopped-Off",
+    "free_bytes": 10302140416,
+    "total_bytes": 982820896768
+  }
+}

@@ -1,0 +1,6 @@
+configs/full_training.env
+logs/
+models/
+checkpoints/
+__pycache__/
+.pytest_cache/

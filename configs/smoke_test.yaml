@@ -1,0 +1,26 @@
+model_repo_id: facebook/MobileLLM-R1-140M
+model_revision: df21db6bd739b9b82c2caf2647b724ed63b8521e
+model_local_dir: models/MobileLLM-R1-140M
+tokenizer_path: models/MobileLLM-R1-140M
+model_path: models/MobileLLM-R1-140M
+train_file: data/smoke_train.jsonl
+output_dir: checkpoints/smoke_test
+report_file: reports/smoke_test_report.json
+max_seq_length: 128
+batch_size: 2
+gradient_accumulation_steps: 1
+learning_rate: 1.0e-5
+weight_decay: 0.0
+max_steps: 1
+max_grad_norm: 1.0
+seed: 42
+device: auto
+dtype: float32
+trust_remote_code: false
+generation_prompt: "Question: What is 2 + 2?\nAnswer:"
+max_new_tokens: 16
+do_sample: false
+min_new_tokens: 1
+reload_logit_tolerance: 1.0e-5
+model_transform: none
+transform_config: {}
