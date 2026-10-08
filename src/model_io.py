@@ -19,6 +19,27 @@ def apply_model_transform(model: Any, cfg: dict[str, Any] | None = None) -> Any:
     raise ValueError(f"Unsupported model_transform: {transform}")
 
 
+def checkpoint_has_weights(path: str | Path) -> bool:
+    root = Path(path)
+    return any(
+        (root / name).is_file()
+        for name in ("model.safetensors", "pytorch_model.bin", "model.safetensors.index.json")
+    )
+
+
+def load_causal_lm(path: str | Path, **kwargs: Any) -> Any:
+    """Load a local causal LM, including a ShiShu MobileLLM checkpoint."""
+    from transformers import AutoConfig, AutoModelForCausalLM
+
+    from src.shishu_llama import ShishuLlamaForCausalLM, register_shishu_llama
+
+    register_shishu_llama()
+    config = AutoConfig.from_pretrained(str(path), local_files_only=True)
+    if getattr(config, "model_type", None) == "shishu-llama":
+        return ShishuLlamaForCausalLM.from_pretrained(str(path), **kwargs)
+    return AutoModelForCausalLM.from_pretrained(str(path), **kwargs)
+
+
 def load_model(
     path: str | Path,
     dtype: Any | None = None,
@@ -27,9 +48,7 @@ def load_model(
     output_loading_info: bool = False,
     trust_remote_code: bool = False,
 ) -> Any:
-    """Load a local Hugging Face causal LM, leaving room for a future builder."""
-    from transformers import AutoModelForCausalLM
-
+    """Load a local Hugging Face causal LM."""
     kwargs: dict[str, Any] = {
         "local_files_only": True,
         "trust_remote_code": trust_remote_code,
@@ -37,7 +56,7 @@ def load_model(
     }
     if dtype is not None:
         kwargs["dtype"] = dtype
-    result = AutoModelForCausalLM.from_pretrained(str(path), **kwargs)
+    result = load_causal_lm(path, **kwargs)
     if output_loading_info:
         model, info = result
         return model.to(device), info

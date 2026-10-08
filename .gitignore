@@ -1,6 +1,14 @@
-configs/full_training.env
+.venv/
+.hf_cache/
 logs/
-models/
 checkpoints/
 __pycache__/
 .pytest_cache/
+*.pyc
+
+# Original Hub snapshot is optional; the surgeried checkpoint is tracked.
+models/MobileLLM-R1-140M/
+# Assembled from model.safetensors.part-* (GitHub rejects Git LFS on public forks).
+models/**/model.safetensors
+
+configs/full_training.env

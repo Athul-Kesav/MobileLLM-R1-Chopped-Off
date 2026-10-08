@@ -22,6 +22,10 @@ class ModelArguments:
     output_model_filename: Optional[str] = field(
         default="test-output", metadata={"help": "Output model relative path"}
     )
+    init_from: str = field(
+        default="checkpoint",
+        metadata={"help": "'checkpoint' loads input weights; 'scratch' only uses its config."},
+    )
 
 
 @dataclass
@@ -31,6 +35,10 @@ class DataArguments:
     )
     eval_data_local_path: Optional[str] = field(
         default=None, metadata={"help": "Eval data local path"}
+    )
+    buffer_size: int = field(
+        default=2048,
+        metadata={"help": "Sequences per shuffle buffer; must be filled before the first batch."},
     )
 
 
@@ -44,6 +52,14 @@ class TrainingArguments(transformers.TrainingArguments):
         metadata={
             "help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)"
         },
+    )
+    min_lr_ratio: float = field(
+        default=0.1,
+        metadata={"help": "Final learning rate as a fraction of the peak."},
+    )
+    logging_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "TensorBoard log directory (kept for transformers 5)."},
     )
 
 

@@ -30,12 +30,23 @@
 
 import argparse
 import datetime
+import os
+import sys
+from pathlib import Path
 from typing import Optional
+
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 import torch
 from accelerate import logging
 from datasets import load_dataset
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoTokenizer
+from transformers.trainer_utils import get_last_checkpoint
+
+from src.model_io import load_causal_lm
+from src.shishu_llama import register_shishu_llama
 
 from trl import (
     DatasetMixtureConfig,
@@ -54,6 +65,31 @@ from trl import (
 logger = logging.get_logger(__name__)
 
 
+def load_sft_dataset(name: str, config: Optional[str], streaming: bool):
+    """Load a Hub dataset or a local directory of JSONL conversations."""
+    path = Path(name)
+    if path.is_dir():
+        files = {}
+        for split in ("train", "test", "validation"):
+            for candidate in (path / f"{split}.jsonl", path / f"{split}.json"):
+                if candidate.is_file():
+                    files[split] = str(candidate)
+                    break
+        if not files:
+            jsonl = sorted(path.glob("*.jsonl"))
+            if jsonl:
+                files["train"] = str(jsonl[0])
+        if not files:
+            raise FileNotFoundError(f"No json/jsonl files in {path}")
+        return load_dataset("json", data_files=files, streaming=streaming)
+    if path.suffix in {".jsonl", ".json"} and path.is_file():
+        return load_dataset("json", data_files={"train": str(path)}, streaming=streaming)
+    kwargs = {"streaming": streaming}
+    if config:
+        kwargs["name"] = config
+    return load_dataset(name, **kwargs)
+
+
 def main(script_args, training_args, model_args, dataset_args):
     ################
     # Model init kwargs & Tokenizer
@@ -70,9 +106,9 @@ def main(script_args, training_args, model_args, dataset_args):
         model_kwargs["device_map"] = get_kbit_device_map()
         model_kwargs["quantization_config"] = quantization_config
 
-    model = AutoModelForCausalLM.from_pretrained(
-        model_args.model_name_or_path, **model_kwargs
-    )
+    register_shishu_llama()
+    model_kwargs.setdefault("local_files_only", Path(model_args.model_name_or_path).exists())
+    model = load_causal_lm(model_args.model_name_or_path, **model_kwargs)
 
     # Create tokenizer
     tokenizer = AutoTokenizer.from_pretrained(
@@ -100,13 +136,23 @@ def main(script_args, training_args, model_args, dataset_args):
     elif dataset_args.datasets and not script_args.dataset_name:
         dataset = get_dataset(dataset_args)
     elif not dataset_args.datasets and script_args.dataset_name:
-        dataset = load_dataset(
+        dataset = load_sft_dataset(
             script_args.dataset_name,
-            name=script_args.dataset_config,
-            streaming=script_args.dataset_streaming,
+            script_args.dataset_config,
+            script_args.dataset_streaming,
         )
     else:
         raise ValueError("Either `datasets` or `dataset_name` must be provided.")
+
+    if not hasattr(dataset, "keys"):
+        dataset = {script_args.dataset_train_split: dataset}
+
+    if training_args.resume_from_checkpoint == "auto":
+        training_args.resume_from_checkpoint = (
+            get_last_checkpoint(training_args.output_dir)
+            if os.path.isdir(training_args.output_dir)
+            else None
+        )
 
     # Initialize the SFT trainer
     trainer = SFTTrainer(
@@ -122,8 +168,7 @@ def main(script_args, training_args, model_args, dataset_args):
         peft_config=get_peft_config(model_args),
     )
 
-    # Train the model
-    trainer.train()
+    trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
 
     # Save and push to Hub
     trainer.save_model(training_args.output_dir)

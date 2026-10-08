@@ -174,8 +174,21 @@ tokenizer padding and model weights, reports CUDA/dtype failures explicitly,
 and fails on missing files, authentication errors, or insufficient disk space.
 
 This is a pipeline smoke test, not a benchmark evaluation, and uses only the
-original model. ShishuLM integration and architecture/conversion behavior are
-intentionally not implemented.
+original model.
+
+ShiShu 140M training is self-contained in this repo (checkpoint under
+`models/MobileLLM-R1-140M-shishu`, mix under `data/`). After clone:
+
+```bash
+git clone <this-repo>
+cd MobileLLM-R1-Chopped-Off
+bash scripts/setup.sh
+PYTHON=.venv/bin/python bash scripts/prepare_full_training.sh configs/train.env
+PYTHON=.venv/bin/python bash scripts/run_full_training.sh configs/train.env all
+```
+
+On A100 use `configs/a100.env` instead of `configs/train.env`. Details in
+`FULL_TRAINING.md`.
 
 # Inference
 

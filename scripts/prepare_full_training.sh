@@ -1,56 +1,85 @@
 #!/usr/bin/env bash
+# Validate the env file, checkpoint, Python packages, and data shards.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-ENV_FILE="${1:-configs/full_training.env}"
+ENV_FILE="${1:-configs/train.env}"
 if [[ ! -f "$ENV_FILE" ]]; then
-  echo "Missing $ENV_FILE. Copy configs/full_training.env.example and fill all values." >&2
+  echo "Missing $ENV_FILE. Use configs/train.env or configs/a100.env." >&2
   exit 2
 fi
 # shellcheck disable=SC1090
 source "$ENV_FILE"
+# shellcheck disable=SC1091
+source scripts/env_lib.sh
+resolve_training_paths
 
-: "${MODEL_SIZE:?MODEL_SIZE is required}"
-: "${MODEL_ROOT:?MODEL_ROOT is required}"
-: "${DATA_ROOT:?DATA_ROOT is required}"
-: "${OUTPUT_ROOT:?OUTPUT_ROOT is required}"
-: "${BASE_MODEL_REVISION:?BASE_MODEL_REVISION is required}"
-: "${FINAL_MODEL_REVISION:?FINAL_MODEL_REVISION is required}"
+: "${MODEL_SIZE:=140m}"
 
-for value in "$BASE_MODEL_REVISION" "$FINAL_MODEL_REVISION"; do
-  if [[ "$value" == REPLACE_* || ! "$value" =~ ^[0-9a-f]{40}$ ]]; then
-    echo "Model revisions must be 40-character resolved Hub SHAs: $value" >&2
-    exit 2
-  fi
-done
-if [[ "${NNODES}" != "16" || "${NPROC_PER_NODE}" != "8" ]]; then
-  echo "This setup targets the paper recipe: NNODES=16 and NPROC_PER_NODE=8." >&2
+if ! [[ "$NNODES" =~ ^[1-9][0-9]*$ && "$NPROC_PER_NODE" =~ ^[1-9][0-9]*$ ]]; then
+  echo "NNODES and NPROC_PER_NODE must be positive integers (got ${NNODES}x${NPROC_PER_NODE})." >&2
   exit 2
 fi
 
+if [[ "${USE_LOCAL_SHISHU_MODEL:-0}" == "1" ]]; then
+  : "${SHISHU_MODEL_DIR:?SHISHU_MODEL_DIR is required}"
+  bash scripts/assemble_model.sh "$SHISHU_MODEL_DIR"
+  [[ -f "$SHISHU_MODEL_DIR/config.json" ]] || {
+    echo "Missing $SHISHU_MODEL_DIR/config.json. Run scripts/stage_shishu_checkpoint.py first." >&2
+    exit 2
+  }
+  if [[ ! -f "$SHISHU_MODEL_DIR/model.safetensors" && ! -f "$SHISHU_MODEL_DIR/pytorch_model.bin" ]]; then
+    echo "Weights are not in $SHISHU_MODEL_DIR yet. Copy model.safetensors there, then rerun this script." >&2
+    exit 2
+  fi
+  "$PYTHON" scripts/stage_shishu_checkpoint.py --dest "$SHISHU_MODEL_DIR" --config "$SHISHU_MODEL_DIR/config.json"
+fi
+
 mkdir -p "$MODEL_ROOT" "$DATA_ROOT" "$OUTPUT_ROOT" "$LOG_ROOT" "$HF_HOME"
-cat > "$OUTPUT_ROOT/SETUP_MANIFEST.txt" <<EOF
-MobileLLM-R1 full-training setup
-model_size=$MODEL_SIZE
-base_model=$BASE_MODEL_ID@$BASE_MODEL_REVISION
-final_model=$FINAL_MODEL_ID@$FINAL_MODEL_REVISION
-teacher=$TEACHER_MODEL_ID
 world_size=$((NNODES * NPROC_PER_NODE))
+cat > "$OUTPUT_ROOT/SETUP_MANIFEST.txt" <<EOF
+ShiShu MobileLLM-R1 training setup
+model_size=$MODEL_SIZE
+python=$PYTHON
+shishu_model=${SHISHU_MODEL_DIR:-}
+world_size=$world_size
+nodes=${NNODES}x${NPROC_PER_NODE}
 data_root=$DATA_ROOT
+output_root=$OUTPUT_ROOT
 created=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
 
-for command in torchrun python; do
-  command -v "$command" >/dev/null || { echo "Missing executable: $command" >&2; exit 1; }
-done
-python - <<'PY'
+command -v "$PYTHON" >/dev/null || { echo "Missing python: $PYTHON. Run bash scripts/setup.sh" >&2; exit 1; }
+"$PYTHON" - <<'PY'
 import importlib.util
-required = ("torch", "transformers", "datasets", "trl", "accelerate", "tensorboard")
+required = ("torch", "transformers", "datasets", "trl", "accelerate", "tensorboard", "safetensors")
 missing = [name for name in required if importlib.util.find_spec(name) is None]
 if missing:
-    raise SystemExit("Missing packages: " + ", ".join(missing) +
-                     ". Install requirements-full.txt in the approved environment.")
+    raise SystemExit(
+        "Missing packages: " + ", ".join(missing) +
+        ". Run bash scripts/setup.sh (creates ./.venv) or pip install -r requirements-full.txt."
+    )
+import torch
+print(f"torch {torch.__version__} cuda={torch.cuda.is_available()} gpus={torch.cuda.device_count()}")
 PY
 
-echo "Setup directories and manifest created under $OUTPUT_ROOT."
-echo "No datasets or models were downloaded. Run scripts/download_full_models.sh after reviewing the manifest."
+check_lm_data() {
+  local label="$1" root="$2"
+  [[ -n "$root" && -d "$root" ]] || { echo "WARN: $label data missing: $root" >&2; return 0; }
+  local node
+  for ((node = 1; node <= NNODES; node++)); do
+    if [[ ! -d "$root/$node" ]]; then
+      echo "WARN: $label missing shard $root/$node (need 1..$NNODES)." >&2
+      return 0
+    fi
+  done
+  echo "OK $label: $root"
+}
+
+check_lm_data pretrain-phase1 "${PRETRAIN_PHASE1_DATA:-}"
+check_lm_data pretrain-phase2 "${PRETRAIN_PHASE2_DATA:-}"
+check_lm_data midtrain-phase1 "${MIDTRAIN_PHASE1_DATA:-}"
+check_lm_data midtrain-phase2 "${MIDTRAIN_PHASE2_DATA:-}"
+
+echo "Setup complete. Manifest: $OUTPUT_ROOT/SETUP_MANIFEST.txt"
+echo "Launch: bash scripts/run_full_training.sh $ENV_FILE all"

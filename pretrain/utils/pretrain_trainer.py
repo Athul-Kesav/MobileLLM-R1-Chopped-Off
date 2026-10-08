@@ -39,12 +39,44 @@ def _get_cosine_schedule_with_warmup_lr_lambda(
     return lr
 
 
+def _get_linear_schedule_with_warmup_lr_lambda(
+    current_step: int,
+    *,
+    num_warmup_steps: int,
+    num_training_steps: int,
+    min_ratio: float,
+) -> float:
+    if current_step < num_warmup_steps:
+        return float(current_step) / float(max(1, num_warmup_steps))
+    progress = float(current_step - num_warmup_steps) / float(
+        max(1, num_training_steps - num_warmup_steps)
+    )
+    return max(min_ratio, 1.0 - (1.0 - min_ratio) * min(1.0, progress))
+
+
+def get_linear_schedule_with_warmup(
+    optimizer: Optimizer,
+    num_warmup_steps: int,
+    num_training_steps: int,
+    min_ratio: float,
+    last_epoch: int = -1,
+) -> LambdaLR:
+    lr_lambda = partial(
+        _get_linear_schedule_with_warmup_lr_lambda,
+        num_warmup_steps=num_warmup_steps,
+        num_training_steps=num_training_steps,
+        min_ratio=min_ratio,
+    )
+    return LambdaLR(optimizer, lr_lambda, last_epoch)
+
+
 def get_cosine_schedule_with_warmup(
     optimizer: Optimizer,
     num_warmup_steps: int,
     num_training_steps: int,
     num_cycles: float = 1.0,
     last_epoch: int = -1,
+    min_ratio: float = 0.1,
 ) -> LambdaLR:
     """
     Create a schedule with a learning rate that decreases following the values of the cosine function between the
@@ -73,6 +105,7 @@ def get_cosine_schedule_with_warmup(
         num_warmup_steps=num_warmup_steps,
         num_training_steps=num_training_steps,
         num_cycles=num_cycles,
+        min_ratio=min_ratio,
     )
     return LambdaLR(optimizer, lr_lambda, last_epoch)
 
@@ -103,10 +136,16 @@ class PretrainMixin:
             num_training_steps (int): The number of training steps to do.
         """
         if self.lr_scheduler is None:
-            self.lr_scheduler = get_cosine_schedule_with_warmup(
+            schedule = (
+                get_linear_schedule_with_warmup
+                if str(self.args.lr_scheduler_type).endswith("linear")
+                else get_cosine_schedule_with_warmup
+            )
+            self.lr_scheduler = schedule(
                 optimizer=self.optimizer if optimizer is None else optimizer,
                 num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
                 num_training_steps=num_training_steps,
+                min_ratio=getattr(self.args, "min_lr_ratio", 0.1),
             )
             self._created_lr_scheduler = True
         return self.lr_scheduler

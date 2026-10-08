@@ -1,0 +1,2 @@
+# Public forks cannot upload Git LFS objects. The 140M checkpoint is stored
+# as 90MB shards and assembled by scripts/assemble_model.sh.

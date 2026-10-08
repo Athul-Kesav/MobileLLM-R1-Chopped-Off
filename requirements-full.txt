@@ -1,0 +1,12 @@
+torch
+transformers>=5.17
+safetensors
+huggingface_hub
+datasets
+accelerate
+trl
+peft
+tensorboard
+liger-kernel
+PyYAML
+pytest
