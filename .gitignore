@@ -6,9 +6,16 @@ __pycache__/
 .pytest_cache/
 *.pyc
 
-# Original Hub snapshot is optional; the surgeried checkpoint is tracked.
+# Original Hub snapshots are downloaded locally; the surgeried checkpoint is tracked.
 models/MobileLLM-R1-140M/
+models/MobileLLM-R1-140M-base/
 # Assembled from model.safetensors.part-* (GitHub rejects Git LFS on public forks).
 models/**/model.safetensors
 
 configs/full_training.env
+
+# Comparison run artifacts (data splits, checkpoints, metrics).
+compare/data/
+compare/runs/
+compare/logs/
+compare/results/

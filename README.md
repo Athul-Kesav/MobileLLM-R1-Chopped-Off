@@ -141,54 +141,25 @@ bash run_reasoning_sft.sh
 | 360M | [MobileLLM-R1-360M](https://huggingface.co/facebook/MobileLLM-R1-360M/tree/MobileLLM-R1-360M-tulu3) | [MobileLLM-R1-360M](https://huggingface.co/facebook/MobileLLM-R1-360M) |
 | 140M | [MobileLLM-R1-140M](https://huggingface.co/facebook/MobileLLM-R1-140M/tree/MobileLLM-R1-140M-tulu3) | [MobileLLM-R1-140M](https://huggingface.co/facebook/MobileLLM-R1-140M) |
 
-# Local download and smoke test
+# Local training
 
-The original MobileLLM-R1-140M model can be downloaded and exercised end-to-end
-without any ShishuLM integration:
-
-```bash
-python -m pip install -r requirements-smoke.txt
-python -m pip install -U huggingface_hub
-hf auth login                         # only if authentication is required
-
-python scripts/download_model.py \
-  --repo_id facebook/MobileLLM-R1-140M \
-  --local_dir models/MobileLLM-R1-140M
-
-python -m src.smoke_test \
-  --config configs/smoke_test.yaml
-
-bash scripts/run_smoke_test.sh
-# or, after a verified download:
-bash scripts/run_smoke_test.sh --skip-download
-```
-
-The download is stored in `models/MobileLLM-R1-140M`; the checkpoint is stored
-in `checkpoints/smoke_test`; and JSON reports are written to `reports/`.
-The model is approximately a few hundred megabytes, and the checkpoint and
-Hugging Face cache require additional free disk space. Set `HF_HOME` or
-`HUGGINGFACE_HUB_CACHE` to use a custom cache. Authenticate with `hf auth login`
-or `HF_TOKEN` (never commit tokens). Use `device: cpu` for CPU execution or
-`device: cuda` and an appropriate `dtype` for CUDA. The script verifies
-tokenizer padding and model weights, reports CUDA/dtype failures explicitly,
-and fails on missing files, authentication errors, or insufficient disk space.
-
-This is a pipeline smoke test, not a benchmark evaluation, and uses only the
-original model.
-
-ShiShu 140M training is self-contained in this repo (checkpoint under
-`models/MobileLLM-R1-140M-shishu`, mix under `data/`). After clone:
+Pretrain and midtrain use the mix under `data/pretrain` and `data/midtrain`. Details are in `FULL_TRAINING.md`.
 
 ```bash
-git clone <this-repo>
-cd MobileLLM-R1-Chopped-Off
 bash scripts/setup.sh
 PYTHON=.venv/bin/python bash scripts/prepare_full_training.sh configs/train.env
 PYTHON=.venv/bin/python bash scripts/run_full_training.sh configs/train.env all
 ```
 
-On A100 use `configs/a100.env` instead of `configs/train.env`. Details in
-`FULL_TRAINING.md`.
+On A100 use `configs/a100.env` instead of `configs/train.env`.
+
+The paired general-then-reasoning SFT for ShiShu and MobileLLM-R1-140M-base is in `compare/`:
+
+```bash
+bash compare/run.sh prepare compare/configs/default.env
+bash compare/run.sh finetune compare/configs/default.env
+bash compare/run.sh eval compare/configs/default.env
+```
 
 # Inference
 
