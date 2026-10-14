@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from transformers.configuration_utils import PreTrainedConfig
+from transformers.configuration_utils import PretrainedConfig
 
 
-class ShishuLlamaConfig(PreTrainedConfig):
+class ShishuLlamaConfig(PretrainedConfig):
     """Hybrid decoder stack: full Llama blocks, then MLP-only ShiShu blocks.
 
     ``num_decoder_front`` full blocks are followed by ``num_mlp`` MLP-only

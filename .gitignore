@@ -19,3 +19,6 @@ compare/data/
 compare/runs/
 compare/logs/
 compare/results/
+
+venv/
+

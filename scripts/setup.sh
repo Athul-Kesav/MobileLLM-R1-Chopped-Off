@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
-VENV="${VENV:-.venv}"
+VENV="${VENV:-venv}"
 
 bash scripts/assemble_model.sh
 "$PYTHON_BIN" -m venv "$VENV"

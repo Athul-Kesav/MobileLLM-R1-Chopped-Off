@@ -11,6 +11,8 @@ load_compare_env() {
   if [[ -z "${PYTHON:-}" || "$PYTHON" == python || "$PYTHON" == python3 ]]; then
     if [[ -x /data/cs26e003/venvs/mobilellm/bin/python ]]; then
       PYTHON=/data/cs26e003/venvs/mobilellm/bin/python
+    elif [[ -x "$PWD/venv/bin/python" ]]; then
+      PYTHON="$PWD/venv/bin/python"
     elif [[ -x "$PWD/.venv/bin/python" ]]; then
       PYTHON="$PWD/.venv/bin/python"
     else
@@ -34,10 +36,17 @@ load_compare_env() {
   fi
 
   : "${MASTER_ADDR:=127.0.0.1}" "${MASTER_PORT:=29521}"
+  local site_packages
+  site_packages="$(dirname "$(dirname "$PYTHON")")/lib/python3.10/site-packages"
+  if [[ -d "$site_packages" ]]; then
+    export PYTHONPATH="$site_packages:$PWD${PYTHONPATH:+:$PYTHONPATH}"
+  else
+    export PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}"
+  fi
   : "${SHISHU_DIR:=models/MobileLLM-R1-140M-shishu}"
   : "${BASE_REPO:=facebook/MobileLLM-R1-140M-base}"
   : "${BASE_DIR:=models/MobileLLM-R1-140M-base}"
-  : "${CHAT_TEMPLATE:=models/MobileLLM-R1-140M/chat_template.jinja}"
+  : "${CHAT_TEMPLATE:=models/MobileLLM-R1-140M-shishu/chat_template.jinja}"
   : "${COMPARE_DATA:=compare/data}"
   : "${RUN_ROOT:=compare/runs}"
   : "${LOG_ROOT:=compare/logs}"
