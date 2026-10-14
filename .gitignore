@@ -1,5 +1,7 @@
 .venv/
+venv/
 .hf_cache/
+.cache/
 logs/
 checkpoints/
 __pycache__/
@@ -12,6 +14,10 @@ models/MobileLLM-R1-140M-base/
 # Assembled from model.safetensors.part-* (GitHub rejects Git LFS on public forks).
 models/**/model.safetensors
 
+# Distillation checkpoints. GitHub rejects files over 100 MB, and these weights stay local.
+kd/runs/**/model.safetensors
+kd/runs/**/optimizer.pt
+
 configs/full_training.env
 
 # Comparison run artifacts (data splits, checkpoints, metrics).
@@ -19,6 +25,3 @@ compare/data/
 compare/runs/
 compare/logs/
 compare/results/
-
-venv/
-

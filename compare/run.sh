@@ -7,6 +7,7 @@ ENV_FILE="${2:-compare/configs/default.env}"
 # shellcheck disable=SC1091
 source compare/env.sh
 load_compare_env "$ENV_FILE"
+export PYTHONHASHSEED="${SEED:-140}"
 
 prepare() {
   mkdir -p "$LOG_ROOT"

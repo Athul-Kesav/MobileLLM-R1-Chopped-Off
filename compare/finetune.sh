@@ -23,6 +23,7 @@ PY
 
 mkdir -p "$RUN_ROOT" "$LOG_ROOT"
 export MASTER_ADDR MASTER_PORT PYTHONPATH="$PWD:$PWD/pretrain${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONHASHSEED="${SFT_SEED:-42}"
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
@@ -62,6 +63,8 @@ run_sft() {
     --save_total_limit 2 \
     --logging_dir "$LOG_ROOT/$name/$stage" \
     --report_to none \
+    --seed "${SFT_SEED:-42}" \
+    --data_seed "${SFT_SEED:-42}" \
     --resume_from_checkpoint auto \
     2>&1 | tee -a "$logfile"
 }

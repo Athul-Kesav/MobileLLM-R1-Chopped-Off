@@ -1,0 +1,53 @@
+{
+  "created_utc": "20261013T165120Z",
+  "device": "cuda",
+  "env": "compare/configs/default.env",
+  "models": {
+    "shishu": {
+      "kd": {
+        "path": "/data2/cs26e003/MobileLLM-R1-Chopped-Off/kd/runs/shishu-layerwise",
+        "parameters": 140246784,
+        "perplexity": {
+          "general": {
+            "sequences": 64,
+            "assistant_tokens": 15543,
+            "loss": 9.780235289238844,
+            "perplexity": 17680.812468542223
+          },
+          "reasoning": {
+            "sequences": 64,
+            "assistant_tokens": 129835,
+            "loss": 4.727145657826017,
+            "perplexity": 112.97263913284506
+          }
+        },
+        "accuracy": {
+          "gsm8k": {
+            "n": 32,
+            "correct": 1,
+            "accuracy": 0.03125
+          },
+          "reasoning_heldout": {
+            "n": 32,
+            "correct": 1,
+            "accuracy": 0.03125
+          }
+        },
+        "latency": {
+          "batch_size": 1,
+          "max_new_tokens": 32,
+          "repeats": 8,
+          "median_latency_s": 0.287310087995138,
+          "median_ms_per_token": 8.978440249848063
+        },
+        "throughput": {
+          "batch_size": 4,
+          "max_new_tokens": 32,
+          "generated_tokens": 128,
+          "seconds": 0.32687439100118354,
+          "tokens_per_s": 391.5877276526583
+        }
+      }
+    }
+  }
+}

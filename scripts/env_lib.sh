@@ -31,6 +31,14 @@ resolve_training_paths() {
   if [[ "$PYTHON" == "python" || "$PYTHON" == "python3" ]] && [[ -x "$PWD/.venv/bin/python" ]]; then
     PYTHON="$PWD/.venv/bin/python"
   fi
+  mkdir -p "$PWD/.hf_cache" "$PWD/.cache/pip" "$PWD/.cache/tmp"
+  export HF_HOME="$PWD/.hf_cache"
+  export HUGGINGFACE_HUB_CACHE="$HF_HOME/hub"
+  export HF_DATASETS_CACHE="$HF_HOME/datasets"
+  export TRANSFORMERS_CACHE="$HF_HOME"
+  export PIP_CACHE_DIR="$PWD/.cache/pip"
+  export TMPDIR="$PWD/.cache/tmp"
+  export XDG_CACHE_HOME="$PWD/.cache"
   [[ "$PYTHON" != /* && "$PYTHON" == */* ]] && PYTHON="$PWD/$PYTHON"
 
   MODEL_ROOT="$(repo_path "${MODEL_ROOT:-models}")"

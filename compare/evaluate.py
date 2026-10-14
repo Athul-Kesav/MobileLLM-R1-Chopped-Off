@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import sys
 import time
 from datetime import datetime, timezone
@@ -68,6 +69,13 @@ def has_weights(path: Path) -> bool:
     )
 
 
+def set_seed(seed: int) -> None:
+    random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
 def pick_device() -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -99,13 +107,50 @@ def sync(device: torch.device) -> None:
         torch.cuda.synchronize(device)
 
 
-def chat_ids(tokenizer, messages: list[dict], add_generation_prompt: bool) -> torch.Tensor:
-    return tokenizer.apply_chat_template(
-        messages,
-        tokenize=True,
-        add_generation_prompt=add_generation_prompt,
-        return_tensors="pt",
-    )
+def context_window(model) -> int | None:
+    config = model.config.get_text_config() if hasattr(model.config, "get_text_config") else model.config
+    positions = getattr(config, "max_position_embeddings", None)
+    if isinstance(positions, int) and positions > 0:
+        return positions
+    return None
+
+
+def fit_length(requested: int, window: int | None, reserved: int = 0) -> int:
+    """Longest input that stays inside the model position table after ``reserved`` new tokens."""
+    if window is None:
+        return max(1, requested)
+    return max(1, min(requested, window - reserved))
+
+
+def chat_ids(
+    tokenizer,
+    messages: list[dict],
+    add_generation_prompt: bool,
+    max_length: int | None = None,
+    truncation_side: str = "right",
+) -> torch.Tensor:
+    previous_side = tokenizer.truncation_side
+    previous_max = tokenizer.model_max_length
+    tokenizer.truncation_side = truncation_side
+    try:
+        kwargs = {
+            "tokenize": True,
+            "add_generation_prompt": add_generation_prompt,
+            "return_tensors": "pt",
+        }
+        if max_length is None:
+            # Measuring the uncropped length must not trip the model_max_length warning.
+            tokenizer.model_max_length = max(int(previous_max or 0), 1_000_000_000)
+        else:
+            kwargs["truncation"] = True
+            kwargs["max_length"] = max_length
+        encoded = tokenizer.apply_chat_template(messages, **kwargs)
+    finally:
+        tokenizer.truncation_side = previous_side
+        tokenizer.model_max_length = previous_max
+    if isinstance(encoded, torch.Tensor):
+        return encoded
+    return encoded["input_ids"]
 
 
 def perplexity(model, tokenizer, rows: list[dict], device: torch.device, max_length: int, max_seqs: int) -> dict:
@@ -123,7 +168,8 @@ def perplexity(model, tokenizer, rows: list[dict], device: torch.device, max_len
             prompt_len = max(1, full.shape[1] // 2)
         overflow = int(full.shape[1] - max_length)
         if overflow > 0:
-            full = full[:, overflow:]
+            # Keep the end of the conversation so the assistant span stays in the window.
+            full = full[:, -max_length:]
             prompt_len = max(0, prompt_len - overflow)
         if prompt_len >= full.shape[1]:
             continue
@@ -150,7 +196,8 @@ def perplexity(model, tokenizer, rows: list[dict], device: torch.device, max_len
 
 def generate_one(model, tokenizer, messages: list[dict], device: torch.device, max_new: int, max_length: int) -> str:
     prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-    encoded = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=max_length)
+    prompt_limit = fit_length(max_length, context_window(model), reserved=max_new)
+    encoded = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=prompt_limit)
     encoded = {key: value.to(device) for key, value in encoded.items()}
     with torch.inference_mode():
         output = model.generate(
@@ -238,7 +285,8 @@ def throughput(model, tokenizer, device: torch.device, batch_size: int, max_new:
         tokenizer.apply_chat_template(user_messages(PROMPTS[i % len(PROMPTS)]), tokenize=False, add_generation_prompt=True)
         for i in range(batch_size)
     ]
-    encoded = tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=max_length)
+    prompt_limit = fit_length(max_length, context_window(model), reserved=max_new)
+    encoded = tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=prompt_limit)
     encoded = {key: value.to(device) for key, value in encoded.items()}
     with torch.inference_mode():
         model.generate(**encoded, max_new_tokens=4, do_sample=False, pad_token_id=tokenizer.pad_token_id)
@@ -268,7 +316,7 @@ def throughput(model, tokenizer, device: torch.device, batch_size: int, max_new:
 def evaluate_checkpoint(path: Path, tokenizer_fallback: Path, env: dict[str, str], data_root: Path, device: torch.device) -> dict:
     tokenizer = load_tokenizer(path, tokenizer_fallback)
     model = load_model(path, device)
-    max_length = int(env.get("SEQ_LEN", "2048"))
+    max_length = fit_length(int(env.get("SEQ_LEN", "2048")), context_window(model))
     general_eval = read_jsonl(data_root / "general" / "eval.jsonl")
     reasoning_eval = read_jsonl(data_root / "reasoning" / "eval.jsonl")
     accuracy_n = int(env.get("ACCURACY_PROBLEMS", "32"))
@@ -370,10 +418,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env", type=Path, default=REPO_ROOT / "compare/configs/default.env")
     parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument("--checkpoint", type=Path, default=None, help="Score this checkpoint only.")
     args = parser.parse_args()
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
     env = load_env(args.env)
+    set_seed(int(env.get("SEED", "140")))
     data_root = resolve(env, "COMPARE_DATA", "compare/data")
     if not (data_root / "general" / "eval.jsonl").is_file():
         raise SystemExit(f"Missing {data_root}. Run: bash compare/run.sh prepare")
@@ -387,6 +437,19 @@ def main() -> None:
         "env": str(args.env),
         "models": {},
     }
+    if args.checkpoint is not None:
+        path = args.checkpoint if args.checkpoint.is_absolute() else REPO_ROOT / args.checkpoint
+        if not has_weights(path):
+            raise SystemExit(f"Missing weights in {path}. Wait until KD finishes writing kd/runs/shishu.")
+        fallback = resolve(env, "CHAT_TEMPLATE", "models/MobileLLM-R1-140M/chat_template.jinja").parent
+        print(f"== checkpoint: {path}")
+        payload["models"]["shishu"] = {
+            "kd": evaluate_checkpoint(path, fallback, env, data_root, device)
+        }
+        (out / "metrics.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        write_report(payload, out / "report.md")
+        print(f"Wrote {out / 'report.md'}")
+        return
     for model_name, stages in checkpoint_map(env).items():
         payload["models"][model_name] = {}
         fallback = stages["init"]

@@ -20,6 +20,16 @@ load_compare_env() {
     fi
   fi
 
+  # Keep downloads and tool caches inside this checkout.
+  mkdir -p "$PWD/.hf_cache" "$PWD/.cache/pip" "$PWD/.cache/tmp"
+  export HF_HOME="$PWD/.hf_cache"
+  export HUGGINGFACE_HUB_CACHE="$HF_HOME/hub"
+  export HF_DATASETS_CACHE="$HF_HOME/datasets"
+  export TRANSFORMERS_CACHE="$HF_HOME"
+  export PIP_CACHE_DIR="$PWD/.cache/pip"
+  export TMPDIR="$PWD/.cache/tmp"
+  export XDG_CACHE_HOME="$PWD/.cache"
+
   if [[ "${NPROC_PER_NODE:-auto}" == auto ]]; then
     if [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
       local csv="${CUDA_VISIBLE_DEVICES// /}"
@@ -28,11 +38,36 @@ load_compare_env() {
       set -- $csv
       NPROC_PER_NODE=$#
     else
-      NPROC_PER_NODE="$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')"
+      # Skip cards another job has already filled. A 140M SFT step fits in a few GiB.
+      local min_free_mib="${MIN_FREE_GPU_MIB:-8192}"
+      local free_gpus=()
+      local idx free
+      while IFS=, read -r idx free; do
+        idx="${idx// /}"
+        free="${free// /}"
+        if [[ "$idx" =~ ^[0-9]+$ && "$free" =~ ^[0-9]+$ && "$free" -ge "$min_free_mib" ]]; then
+          free_gpus+=("$idx")
+        fi
+      done < <(nvidia-smi --query-gpu=index,memory.free --format=csv,noheader,nounits 2>/dev/null || true)
+      if [[ ${#free_gpus[@]} -ge 1 ]]; then
+        local IFS=,
+        export CUDA_VISIBLE_DEVICES="${free_gpus[*]}"
+        NPROC_PER_NODE=${#free_gpus[@]}
+        echo "Using GPUs with at least ${min_free_mib} MiB free: ${CUDA_VISIBLE_DEVICES}"
+      else
+        echo "No GPU has ${min_free_mib} MiB free. Set CUDA_VISIBLE_DEVICES or MIN_FREE_GPU_MIB." >&2
+        NPROC_PER_NODE=0
+      fi
     fi
     if [[ -z "${NPROC_PER_NODE}" || "${NPROC_PER_NODE}" -lt 1 ]]; then
       NPROC_PER_NODE=0
     fi
+  fi
+
+  # A sourced env file sets this in the shell only. torchrun will not see it
+  # unless it is exported, and then rank 1 lands on physical GPU 1.
+  if [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
+    export CUDA_VISIBLE_DEVICES
   fi
 
   : "${MASTER_ADDR:=127.0.0.1}" "${MASTER_PORT:=29521}"

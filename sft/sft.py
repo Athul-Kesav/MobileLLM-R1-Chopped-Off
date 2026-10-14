@@ -40,7 +40,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 import torch
-from accelerate import logging
+from accelerate import PartialState, logging
 from datasets import load_dataset
 from transformers import AutoTokenizer
 from transformers.trainer_utils import get_last_checkpoint
@@ -51,7 +51,6 @@ from src.shishu_llama import register_shishu_llama
 from trl import (
     DatasetMixtureConfig,
     get_dataset,
-    get_kbit_device_map,
     get_peft_config,
     get_quantization_config,
     ModelConfig,
@@ -60,6 +59,14 @@ from trl import (
     SFTTrainer,
     TrlParser,
 )
+
+
+def get_kbit_device_map():
+    """Place a 4/8-bit model on the local process device. Removed from trl 1.15."""
+    xpu = getattr(torch, "xpu", None)
+    if torch.cuda.is_available() or (xpu is not None and xpu.is_available()):
+        return {"": PartialState().local_process_index}
+    return None
 
 
 logger = logging.get_logger(__name__)
@@ -94,9 +101,10 @@ def main(script_args, training_args, model_args, dataset_args):
     ################
     # Model init kwargs & Tokenizer
     ################
+    trust_remote_code = getattr(model_args, "trust_remote_code", False)
     model_kwargs = dict(
         revision=model_args.model_revision,
-        trust_remote_code=model_args.trust_remote_code,
+        trust_remote_code=trust_remote_code,
         attn_implementation=model_args.attn_implementation,
         dtype=model_args.dtype,
     )
@@ -113,7 +121,7 @@ def main(script_args, training_args, model_args, dataset_args):
     # Create tokenizer
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.model_name_or_path,
-        trust_remote_code=model_args.trust_remote_code,
+        trust_remote_code=trust_remote_code,
         use_fast=True,
     )
     if (

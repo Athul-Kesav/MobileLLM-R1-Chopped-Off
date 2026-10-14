@@ -6,6 +6,15 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 VENV="${VENV:-venv}"
 
+mkdir -p .hf_cache .cache/pip .cache/tmp
+export HF_HOME="$PWD/.hf_cache"
+export HUGGINGFACE_HUB_CACHE="$HF_HOME/hub"
+export HF_DATASETS_CACHE="$HF_HOME/datasets"
+export TRANSFORMERS_CACHE="$HF_HOME"
+export PIP_CACHE_DIR="$PWD/.cache/pip"
+export TMPDIR="$PWD/.cache/tmp"
+export XDG_CACHE_HOME="$PWD/.cache"
+
 bash scripts/assemble_model.sh
 "$PYTHON_BIN" -m venv "$VENV"
 "$VENV/bin/python" -m pip install -U pip
